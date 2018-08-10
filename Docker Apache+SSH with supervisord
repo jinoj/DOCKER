@@ -1,0 +1,30 @@
+vim Dockerfile
+
+FROM ubuntu
+MAINTAINER <jinojoe@gmail.com>
+RUN apt update
+RUN apt install supervisor apache2 openssh-server -y
+RUN mkdir /var/lock/apache2 /var/run/apache2 /var/run/sshd
+RUN echo 'root:jino' | chpasswd
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+RUN sed -i '/\[supervisord\]/a nodaemon=true' /etc/supervisor/supervisord.conf
+COPY myservice.conf /etc/supervisor/conf.d/
+EXPOSE 22 80
+CMD  ["supervisord"]
+
+vim myservice.conf
+
+[program:sshd]
+command=/usr/sbin/sshd -D
+
+[program:apache2]
+command=/bin/bash -c "source /etc/apache2/envvars && exec /usr/sbin/apache2 -DFOREGROUND"
+
+
+ docker build -t supervisor/ubuntusshwithapache:v1.0 .
+ 
+ docker run -d -p "8080:80" -p 2222:22 --name apache-server supervisor/ubuntusshwithapache:v1.0
+ 
+ ssh -p 2222 root@13.232.165.153
+ 
+ 
