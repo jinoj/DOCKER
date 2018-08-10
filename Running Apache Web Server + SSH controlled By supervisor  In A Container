@@ -1,0 +1,69 @@
+vim Dockerfile
+
+FROM centos
+MAINTAINER jinojoe <jinojoe@gmail.com>
+
+# Install SSH, Apache packages
+RUN yum -y --setopt=tsflags=nodocs install openssh-server httpd python-setuptools && yum clean all
+
+# Install Supervisor. Note: CentOS 7 base image repo doesn't have supervisor
+RUN easy_install supervisor
+
+# Backup original sshd_config
+RUN cp /etc/ssh/sshd_config /etc/ssh/sshd_config.orig
+RUN chmod a-w /etc/ssh/sshd_config.orig
+# Make directories to store services' data
+RUN mkdir /var/run/sshd /var/log/supervisor
+
+# Set root's password
+RUN echo 'root:jino' | chpasswd
+
+# Permit SSH login for root user
+RUN sed -i 's/#PermitRootLogin/PermitRootLogin/' /etc/ssh/sshd_config
+
+# Generate keys for SSH setup
+RUN /usr/bin/ssh-keygen -q -t rsa -f /etc/ssh/ssh_host_rsa_key -C '' -N ''
+RUN /usr/bin/ssh-keygen -q -t dsa -f /etc/ssh/ssh_host_dsa_key -C '' -N ''
+
+# Add supervisor's configuration file to the container. Note: This config file is referred by supervisord once started inside container
+COPY supervisord.conf /usr/etc/supervisord.conf
+
+# Allow ports 22 and 80 for container
+EXPOSE 22 80
+
+# Execute supervisord as entrypoint into the container
+CMD ["/usr/bin/supervisord"]
+
+vim supervisord.conf
+
+[unix_http_server]
+file=/var/run/supervisor.sock   ; (the path to the socket file)
+chmod=0700                       ; sockef file mode (default 0700)
+
+[supervisord]
+nodaemon=true
+logfile=/var/log/supervisor/supervisord.log ; (main log file;default $CWD/supervisord.log)
+pidfile=/var/run/supervisord.pid ; (supervisord pidfile;default supervisord.pid)
+childlogdir=/var/log/supervisor            ; ('AUTO' child log dir, default $TEMP)
+
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix:///var/run/supervisor.sock ; use a unix:// URL  for a unix socket
+
+[include]
+files = /etc/supervisor/conf.d/*.conf
+
+
+[program:sshd]
+command=/usr/sbin/sshd -D
+
+[program:httpd]
+command=/bin/bash -c "rm -rf /run/httpd/* /tmp/httpd* && exec /usr/sbin/apachectl -DFOREGROUND"
+~                                                                                                    
+
+
+ docker build -t supervisor1/centsshwithhttpd:v1.0 .
+ 
+ docker run -d -p "2223:22" -p "8081:80" --name httpd-server supervisor1/centsshwithhttpd:v1.0
