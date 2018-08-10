@@ -1,0 +1,132 @@
+# Docker install for Debian / Ubuntu
+apt-get install docker.io
+# Docker install for Red Hat / CentOS (requires EPEL repo)
+yum install epel-release # If not installed already
+yum install docker-io
+# Pull docker repos
+docker pull percona
+
+
+# Create local data directories
+mkdir -p /opt/Docker/masterdb/data /opt/Docker/slavedb/data
+# Create local my.cnf directories
+mkdir -p /opt/Docker/masterdb/cnf /opt/Docker/slavedb/cnf
+### Create configuration files for master and slave
+vi /opt/Docker/masterdb/cnf/config-file.cnf
+# Config Settings:
+[mysqld]
+server-id=1
+binlog_format=ROW
+log-bin
+vi /opt/Docker/slavedb/cnf/config-file.cnf
+# Config Settings:
+[mysqld]
+server-id=2
+
+
+# Launch master instance
+docker run --name masterdb -v /opt/Docker/masterdb/cnf:/etc/mysql/conf.d -v /opt/Docker/masterdb/data:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=mysecretpass -d percona:5.6
+00a0231fb689d27afad2753e4350192bebc19ab4ff733c07da9c20ca4169759e
+# Create replication user
+docker exec -ti masterdb 'mysql' -uroot -pmysecretpass -vvv -e"GRANT REPLICATION SLAVE ON *.* TO repl@'%' IDENTIFIED BY 'slavepass'G"
+mysql: [Warning] Using a password on the command line interface can be insecure.
+--------------
+GRANT REPLICATION SLAVE ON *.* TO repl@"%"
+--------------
+Query OK, 0 rows affected (0.02 sec)
+Bye
+### Get master status
+docker exec -ti masterdb 'mysql' -uroot -pmysecretpass -e"SHOW MASTER STATUSG"
+mysql: [Warning] Using a password on the command line interface can be insecure.
+*************************** 1. row ***************************
+             File: mysqld-bin.000004
+         Position: 310
+     Binlog_Do_DB:
+ Binlog_Ignore_DB:
+Executed_Gtid_Set:
+
+
+docker run --name slavedb -d -v /opt/Docker/slavedb/cnf:/etc/mysql/conf.d -v /opt/Docker/slavedb/data:/var/lib/mysql --link masterdb:mysql -e MYSQL_ROOT_PASSWORD=mysecretpass -d percona:5.6
+eb7141121300c104ccee0b2df018e33d4f7f10bf5d98445ed4a54e1316f41891
+docker exec -ti slavedb 'mysql' -uroot -pmysecretpass -e'change master to master_host="mysql",master_user="repl",master_password="slavepass",master_log_file="mysqld-bin.000004",master_log_pos=310;"' -vvv
+mysql: [Warning] Using a password on the command line interface can be insecure.
+--------------
+change master to master_host="mysql",master_user="repl",master_password="slavepass",master_log_file="mysqld-bin.000004",master_log_pos=310
+--------------
+Query OK, 0 rows affected, 2 warnings (0.23 sec)
+Bye
+
+
+# Start replication
+docker exec -ti slavedb 'mysql' -uroot -pmysecretpass -e"START SLAVE;" -vvv
+mysql: [Warning] Using a password on the command line interface can be insecure.
+--------------
+START SLAVE
+--------------
+Query OK, 0 rows affected, 1 warning (0.00 sec)
+Bye
+# Verify replication is running OK
+docker exec -ti slavedb 'mysql' -uroot -pmysecretpass -e"SHOW SLAVE STATUSG" -vvv
+mysql: [Warning] Using a password on the command line interface can be insecure.
+--------------
+SHOW SLAVE STATUS
+--------------
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for master to send event
+                  Master_Host: mysql
+                  Master_User: repl
+                  Master_Port: 3306
+                Connect_Retry: 60
+              Master_Log_File: mysqld-bin.000004
+          Read_Master_Log_Pos: 310
+               Relay_Log_File: mysqld-relay-bin.000002
+                Relay_Log_Pos: 284
+        Relay_Master_Log_File: mysqld-bin.000004
+             <strong>Slave_IO_Running: Yes
+            Slave_SQL_Running: Yes</strong>
+              Replicate_Do_DB:
+          Replicate_Ignore_DB:
+           Replicate_Do_Table:
+       Replicate_Ignore_Table:
+      Replicate_Wild_Do_Table:
+  Replicate_Wild_Ignore_Table:
+                   Last_Errno: 0
+                   Last_Error:
+                 Skip_Counter: 0
+          Exec_Master_Log_Pos: 310
+              Relay_Log_Space: 458
+              Until_Condition: None
+               Until_Log_File:
+                Until_Log_Pos: 0
+           Master_SSL_Allowed: No
+           Master_SSL_CA_File:
+           Master_SSL_CA_Path:
+              Master_SSL_Cert:
+            Master_SSL_Cipher:
+               Master_SSL_Key:
+        <strong>Seconds_Behind_Master: 0</strong>
+Master_SSL_Verify_Server_Cert: No
+                Last_IO_Errno: 0
+                Last_IO_Error:
+               Last_SQL_Errno: 0
+               Last_SQL_Error:
+  Replicate_Ignore_Server_Ids:
+             Master_Server_Id: 1
+                  Master_UUID: 230d005a-f1a6-11e5-b546-0242ac110004
+             Master_Info_File: /var/lib/mysql/master.info
+                    SQL_Delay: 0
+          SQL_Remaining_Delay: NULL
+      Slave_SQL_Running_State: Slave has read all relay log; waiting for the slave I/O thread to update it
+           Master_Retry_Count: 86400
+                  Master_Bind:
+      Last_IO_Error_Timestamp:
+     Last_SQL_Error_Timestamp:
+               Master_SSL_Crl:
+           Master_SSL_Crlpath:
+           Retrieved_Gtid_Set:
+            Executed_Gtid_Set:
+                Auto_Position: 0
+1 row in set (0.00 sec)
+Bye
+
+
