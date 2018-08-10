@@ -1,3 +1,5 @@
+docker pull mysql
+
 mkdir -p /opt/jino/master/data /opt/jino/slave/data
 
 mkdir -p /opt/jino/master/cnf /opt/jino/slave/cnf
@@ -6,27 +8,40 @@ vi /opt/jino/master/cnf/config-file.cnf
 # Config Settings:
 [mysqld]
 server-id=1
-binlog_format=ROW
-log-bin 
-
+log-bin=mysql-bin
+log-slave-updates=1
+datadir=/var/lib/mysql/
+innodb_flush_log_at_trx_commit = 2
+innodb_flush_method = O_DIRECT
+skip-host-cache
+skip-name-resolve
 
 vi /opt/jino/slave/cnf/config-file.cnf
 # Config Settings:
 [mysqld]
 server-id=2
+log-bin=mysql-bin
+log-slave-updates=1
+auto_increment_increment=2
+auto_increment_offset=2
+datadir=/var/lib/mysql
+read-only=1
+slave-skip-errors = 1062
+skip-host-cache
+skip-name-resolve
 
-docker run --name masterdb -v /opt/jino/master/cnf:/etc/mysql/conf.d -v /opt/jino/master/data:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=mysecretpass -d percona:5.6
+docker run --name master -v /opt/jino/master/cnf:/etc/mysql/conf.d -v /opt/jino/master/data:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=mysecretpass -d mysql:5.5
 
-docker exec -ti masterdb 'mysql' -uroot -pmysecretpass -vvv -e"GRANT REPLICATION SLAVE ON *.* TO repl@'%' IDENTIFIED BY 'slavepass'G"
+docker exec -ti master 'mysql' -uroot -pmysecretpass -vvv -e"GRANT REPLICATION SLAVE ON *.* TO repl@'%' IDENTIFIED BY 'slavepass'G"
 
-docker exec -ti masterdb 'mysql' -uroot -pmysecretpass -e"SHOW MASTER STATUSG"
+docker exec -ti master 'mysql' -uroot -pmysecretpass -e"SHOW MASTER STATUSG"
 
 
-docker run --name slavedb -d -v /opt/jino/slave/cnf:/etc/mysql/conf.d -v /opt/jino/slave/data:/var/lib/mysql --link masterdb:mysql -e MYSQL_ROOT_PASSWORD=mysecretpass -d percona:5.6
+docker run --name slave -d -v /opt/jino/slave/cnf:/etc/mysql/conf.d -v /opt/jino/slave/data:/var/lib/mysql --link masterdb:mysql -e MYSQL_ROOT_PASSWORD=mysecretpass -d mysql:5.5
 
-docker exec -ti slavedb 'mysql' -uroot -pmysecretpass -e'change master to master_host="mysql",master_user="repl",master_password="slavepass",master_log_file="mysqld-bin.000004",master_log_pos=310;"' -vvv
+docker exec -ti slave 'mysql' -uroot -pmysecretpass -e'change master to master_host="mysql",master_user="repl",master_password="slavepass",master_log_file="mysqld-bin.000004",master_log_pos=310;"' -vvv
 
-docker exec -ti slavedb 'mysql' -uroot -pmysecretpass -e"START SLAVE;" -vvv
+docker exec -ti slave 'mysql' -uroot -pmysecretpass -e"START SLAVE;" -vvv
 
-docker exec -ti slavedb 'mysql' -uroot -pmysecretpass -e"SHOW SLAVE STATUSG" -vvv
+docker exec -ti slave 'mysql' -uroot -pmysecretpass -e"SHOW SLAVE STATUSG" -vvv
 
