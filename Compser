@@ -1,0 +1,14 @@
+version: "2"
+services: 
+  jino:
+    image: httpd
+    container_name: qw
+    ports:
+      - "8080:80"
+    volumes: 
+      - "/home/michael/jino:/var/www/html"
+      
+      
+      ====================================================================
+      
+      
